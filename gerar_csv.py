@@ -1,15 +1,24 @@
 import pandas as pd
-from funcionarios import SERVIDORES_TRATADOS    
+from funcionarios import process_servidores, add_salarios
 from funcionarios import UNIVERSIDADE
-import time
+import json
 import subprocess
-data = SERVIDORES_TRATADOS
-NOME_CSV = 'SALARIO_SERVIDORES_{UNIVERSIDADE}_AGOSTO_COMMIT_AUTOMATIZADO'.format(UNIVERSIDADE=UNIVERSIDADE)
-# List to store the flattened data
+
+# Carrega os dados dos servidores
+with open(f"SERVIDORES_{UNIVERSIDADE}_TODOS.json", 'r') as file:
+    SERVIDORES = json.load(file)
+
+# Processa os servidores e adiciona os salários
+servidores_tratados = process_servidores(SERVIDORES)
+add_salarios(servidores_tratados)
+
+NOME_CSV = f'SALARIO_SERVIDORES_{UNIVERSIDADE}_AGOSTO_COMMIT_AUTOMATIZADO.csv'
+
+# Lista para armazenar os dados planificados
 rows = []
 
-# Extract the relevant data
-for person in data:
+# Extrai os dados relevantes
+for person in servidores_tratados:
     nome = person['nome']
     situacao = person['situacao']
     id_servidor = person['idServidorAposentadoPensionista']
@@ -27,13 +36,16 @@ for person in data:
             'REMUNERACAO LIQUIDA': liquido
         })
 
-# Create a DataFrame
-
-
+# Cria um DataFrame e ordena por nome
 df = pd.DataFrame(rows).sort_values(by='NOME')
-df.to_csv(NOME_CSV, index = False)
+
+# Salva o DataFrame como CSV
+df.to_csv(NOME_CSV, index=False)
 
 print("\n CSV gerado! \n")
-comando="zsh -i -c 'vai'"
+
+# Executa o comando de commit (assumindo que 'vai' é um alias para o comando git)
+comando = "zsh -i -c 'vai'"
 subprocess.run(comando, shell=True)
+
 print("\n \n Commit subiu! \n \n")

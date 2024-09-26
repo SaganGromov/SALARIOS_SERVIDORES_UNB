@@ -1,92 +1,57 @@
 import json
 import time
 import os
-from datetime import datetime, timedelta
-import calendar
+from datetime import datetime
 import subprocess
 import requests
 import re
 from funcionarios import UNIVERSIDADE
 from obter_servidores import CHAVE_API
+
 CUTOFF = 60
 url = 'https://api.portaldatransparencia.gov.br/api-de-dados/servidores/remuneracao'
 
-JSON_A_PRESERVAR = 'SERVIDORES_{UNIVERSIDADE}_TODOS.json'.format(UNIVERSIDADE = UNIVERSIDADE)
-
+JSON_A_PRESERVAR = f'SERVIDORES_{UNIVERSIDADE}_TODOS.json'
 
 def apagar():
-    comando = '''find . -type f -name '*.json' ! -name '{JSON_A_PRESERVAR}' -delete'''.format(JSON_A_PRESERVAR = JSON_A_PRESERVAR)
+    """Apaga todos os arquivos JSON exceto o especificado em JSON_A_PRESERVAR."""
+    comando = f'''find . -type f -name '*.json' ! -name '{JSON_A_PRESERVAR}' -delete'''
     subprocess.run(comando, shell=True)
 
-def format_year_month(number):
-    if 1 <= number <= 12:
-        current_year = datetime.now().year
-        if number < 10:
-            return f"{current_year}0{number}"
-        else:
-            return f"{current_year}{number}"
-    else:
-        return "Number must be between 1 and 12."
-    
-
 def carrega_json(nome):
+    """Carrega um arquivo JSON e retorna seu conteúdo."""
     with open(nome+'.json', 'r') as f:
-        data = json.load(f)
-    return data
-
+        return json.load(f)
 
 def nomear_id(identificador):
+    """Retorna o nome do servidor com base no seu identificador."""
     procurar_em = carrega_json(f'SERVIDORES_{UNIVERSIDADE}_TODOS')
     for elemento in procurar_em:
         if elemento['servidor']["idServidorAposentadoPensionista"] == identificador:
             return elemento['servidor']['pessoa']['nome']
-
-
+    return "Nome não encontrado"
 
 def salva_json(resposta, nome):
-    data=resposta.json()
-    # Salvando o JSON em um arquivo
-    if os.path.isfile(nome + '.json'):
-        return  # Do nothing if the file already exists
-    with open(nome+'.json', 'w') as f:
-        json.dump(data, f, indent=4, sort_keys=True, ensure_ascii=False)
+    """Salva a resposta da API em um arquivo JSON se ele não existir."""
+    if not os.path.isfile(nome + '.json'):
+        with open(nome+'.json', 'w') as f:
+            json.dump(resposta.json(), f, indent=4, sort_keys=True, ensure_ascii=False)
 
 def search_in_json(file_path, bruta):
+    """Busca um padrão específico no arquivo JSON."""
     try:
-        # Set pattern based on the value of bruta
-        if bruta:
-            pad = r'"remuneracaoBasicaBruta":\s*"\K[^"]*'
-        else:
-            pad = r'"valorTotalRemuneracaoAposDeducoes":\s*"\K[^"]*'
-        
-        # Using grep to find any value that matches the pattern
-        result = subprocess.run(
-            ['grep', '-oP', pad, file_path],
-            capture_output=True, text=True
-        )
-
-        # Check if any matches were found and return the results
-        if result.stdout:
-            return result.stdout.strip().split('\n')
-        else:
-            return "Pattern not found." 
-    except AssertionError:
-        raise
+        pad = r'"remuneracaoBasicaBruta":\s*"\K[^"]*' if bruta else r'"valorTotalRemuneracaoAposDeducoes":\s*"\K[^"]*'
+        result = subprocess.run(['grep', '-oP', pad, file_path], capture_output=True, text=True)
+        return result.stdout.strip().split('\n') if result.stdout else "Padrão não encontrado."
     except Exception as e:
         return str(e)
+
 def format_brl(value: float) -> str:
-    """
-    Converts a float number into Brazilian Real (BRL) format.
-    
-    Args:
-        value (float): The float number to be converted.
-        
-    Returns:
-        str: The formatted string in BRL (e.g., 'R$ 14.547,45').
-    """
+    """Formata um número float para o formato de moeda brasileira (BRL)."""
     return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def busca_rem(arquivo, bruta):
+    """Busca e formata a remuneração no arquivo JSON."""
     try:
         matches = search_in_json(arquivo, bruta)
         rem_string = matches[0]
@@ -94,68 +59,40 @@ def busca_rem(arquivo, bruta):
         conv = l[0]+l[1] + '.' + l[2]
         return format_brl(float(conv))
     except IndexError:
-        return 0
+        return "R$ 0,00"
+
 n_req = 1
 COMEÇO = time.time()
-total_time = 0
+
 def pega_salario(ID_A_PROCURAR, mes):
-    global url
-    global n_req
-    global COMEÇO
+    """Obtém o salário de um servidor para um determinado mês."""
+    global n_req, COMEÇO
     NOME_A_SALVAR = nomear_id(ID_A_PROCURAR).replace(' ', '_') + '__' + mes + '___'+ f'REQUISICAO-{n_req}'
     elapsed_time = time.time() - COMEÇO
-    # print(f'\n \n {int(total_time)} seconds past \n \n')
-    n_req+=1
+    n_req += 1
     print(NOME_A_SALVAR)
     print(f"\n Tempo passado: {elapsed_time:.2f} segundos \n")
-    # assert elapsed_time <= CUTOFF, "TEMPO EXCEDIDO"
-    # Definir os parâmetros da requisição
+
     params = {
         'id': ID_A_PROCURAR,
         'mesAno': mes,
         'pagina': 1
     }
-
-    # Definir os headers da requisição
     headers = {
         'accept': '*/*',
         'chave-api-dados': CHAVE_API
     }
 
-    # Fazer a requisição GET
     response = requests.get(url, headers=headers, params=params)
-
-
     salva_json(response, NOME_A_SALVAR)
-    resultado = {"bruta": busca_rem(NOME_A_SALVAR + '.json', bruta=True), "liquida": busca_rem(NOME_A_SALVAR + '.json', bruta=False)}
+    resultado = {"bruta": busca_rem(NOME_A_SALVAR + '.json', bruta=True), 
+                 "liquida": busca_rem(NOME_A_SALVAR + '.json', bruta=False)}
     apagar()
     return resultado
-    
-    
 
 def last_six_months():
-    return ['202408']
-    # # Get the current date
-    # now = datetime.now()
-    
-    # # List to hold the last six months
-    # months = []
+    """Retorna uma lista com os últimos seis meses no formato YYYYMM."""
+    return ['202408']  # Temporariamente retornando apenas um mês para teste
 
-    # # Loop to get the last six months
-    # for i in range(1, 7):
-    #     # Calculate the previous month
-    #     previous_month = now.month - i
-    #     previous_year = now.year
-        
-    #     # Adjust the year and month if the month goes below 1
-    #     if previous_month <= 0:
-    #         previous_month += 12
-    #         previous_year -= 1
-        
-    #     # Format the month and year as YYYYMM
-    #     formatted_month = f"{previous_year}{previous_month:02d}"
-    #     months.append(formatted_month)
-    
-    # return months
 if __name__ == '__main__':
     print(last_six_months())

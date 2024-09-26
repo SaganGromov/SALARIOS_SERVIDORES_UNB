@@ -5,15 +5,16 @@ DEPT_A_CHECAR="DEPTO MATEMATICA"
 import json
 import salarios
 import pandas as pd
+from typing import Dict, Any, List
 
 
 class Funcionario:
-    def __init__(self, idServidorAposentadoPensionista, situacao, nome, dept):
+    def __init__(self, idServidorAposentadoPensionista: str, situacao: str, nome: str, dept: str):
         self.idServidorAposentadoPensionista = idServidorAposentadoPensionista
         self.situacao = situacao
         self.nome = nome
         self.dept = dept
-        self.salarios = {}  # Dicionário para armazenar salários por mês
+        self.salarios: Dict[str, Dict[str, float]] = {}
 
     def definir_salario(self, mes, salario):
         """Define o salário de um determinado mês."""
@@ -30,53 +31,52 @@ class Funcionario:
     def teste(self):
         print("teste")
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the Funcionario object to a dictionary."""
+        return {
+            "idServidorAposentadoPensionista": self.idServidorAposentadoPensionista,
+            "situacao": self.situacao,
+            "nome": self.nome,
+            "dept": self.dept,
+            "salarios": self.salarios
+        }
 
 
-with open(f"SERVIDORES_{UNIVERSIDADE}_TODOS.json", 'r') as file:
-    # Load the JSON content into a list
-    SERVIDORES = json.load(file)
-# Criando um funcionário
-c = 0
-SERVIDORES_TRATADOS = []
-NAO_TESTAR_TODOS = True
-LIMITE_DE_TESTE = 10**10
-for elemento in SERVIDORES:
-    try:
-        servidor = elemento['servidor']
-        dept = elemento['fichasCargoEfetivo'][0]["uorgExercicio"]
-        # if dept in DEPT_A_CHECAR:
-        funcionario = Funcionario(idServidorAposentadoPensionista=servidor['idServidorAposentadoPensionista'], situacao = servidor['situacao'], nome = servidor['pessoa']['nome'], dept = elemento['fichasCargoEfetivo'][0]["uorgExercicio"])
-        # funcionario.listar_atributos()
-        SERVIDORES_TRATADOS.append({"idServidorAposentadoPensionista": servidor['idServidorAposentadoPensionista'], "situacao": servidor['situacao'], "nome": servidor['pessoa']['nome'], "dept": elemento['fichasCargoEfetivo'][0]["uorgExercicio"], "salarios": {}})
-    except AssertionError:
-        raise
-    except Exception as e:
-        pass
-    if NAO_TESTAR_TODOS:
-        c += 1
-        if c == LIMITE_DE_TESTE:
-            break
-nc = 0
-for servidor in SERVIDORES_TRATADOS:
-    try:
-        for i in salarios.last_six_months():
-            dept = servidor['dept']
-            ID = servidor['idServidorAposentadoPensionista']
-            sal = salarios.pega_salario(ID_A_PROCURAR=ID, mes = i)
-            bruta = sal['bruta']
-            liquida = sal['liquida']
-            servidor['salarios'][i] = {"REMUNERACAO BRUTA": bruta, "REMUNERACAO LIQUIDA": liquida}
-    except AssertionError:
-        raise
-    except Exception as e:
-        # teste pra commitar sep23 at23h53
-        print(e)
-        pass 
-    if NAO_TESTAR_TODOS:
-        nc += 1
-        if nc == LIMITE_DE_TESTE:
-            break
-print('\n \n')
-# for servidor in SERVIDORES_TRATADOS:
-#     print(servidor)
-#     print('\n \n')
+def process_servidores(servidores: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    servidores_tratados = []
+    for elemento in servidores:
+        try:
+            servidor = elemento['servidor']
+            dept = elemento['fichasCargoEfetivo'][0]["uorgExercicio"]
+            funcionario = Funcionario(
+                idServidorAposentadoPensionista=servidor['idServidorAposentadoPensionista'],
+                situacao=servidor['situacao'],
+                nome=servidor['pessoa']['nome'],
+                dept=dept
+            )
+            servidores_tratados.append(funcionario.to_dict())
+        except Exception as e:
+            print(f"Error processing servidor: {e}")
+    
+    return servidores_tratados
+
+def add_salarios(servidores_tratados: List[Dict[str, Any]]) -> None:
+    for servidor in servidores_tratados:
+        try:
+            for mes in salarios.last_six_months():
+                sal = salarios.pega_salario(ID_A_PROCURAR=servidor['idServidorAposentadoPensionista'], mes=mes)
+                servidor['salarios'][mes] = {"REMUNERACAO BRUTA": sal['bruta'], "REMUNERACAO LIQUIDA": sal['liquida']}
+        except Exception as e:
+            print(f"Error adding salarios for servidor {servidor['idServidorAposentadoPensionista']}: {e}")
+
+if __name__ == "__main__":
+    with open(f"SERVIDORES_{UNIVERSIDADE}_TODOS.json", 'r') as file:
+        SERVIDORES = json.load(file)
+    
+    servidores_tratados = process_servidores(SERVIDORES)
+    add_salarios(servidores_tratados)
+
+    # Uncomment to print results
+    # for servidor in servidores_tratados:
+    #     print(servidor)
+    #     print('\n \n')
